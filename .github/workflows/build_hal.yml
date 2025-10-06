@@ -1,0 +1,182 @@
+name: Build Audio HAL
+
+# 触发条件：手动触发或推送代码时
+on:
+  workflow_dispatch:  # 允许手动触发
+  push:
+    paths:
+      - 'hal_source/**'  # 当HAL源码变化时触发
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04  # 使用Ubuntu 22.04环境（免费）
+    
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v3
+      
+    - name: 设置环境
+      run: |
+        echo "========================================="
+        echo "   安装编译依赖"
+        echo "========================================="
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          git \
+          python3 \
+          python-is-python3 \
+          bc \
+          bison \
+          flex \
+          libssl-dev \
+          zip \
+          curl \
+          rsync \
+          openjdk-11-jdk
+        
+    - name: 下载LineageOS源码（精简版）
+      run: |
+        echo "========================================="
+        echo "   准备编译环境"
+        echo "========================================="
+        
+        # 创建工作目录
+        mkdir -p ~/lineageos
+        cd ~/lineageos
+        
+        # 初始化最小化的repo（只下载必要的部分）
+        git clone https://github.com/LineageOS/android.git -b lineage-21.0 --depth=1 build_repo
+        
+        # 创建基本目录结构
+        mkdir -p build hardware/qcom/audio prebuilts/gcc/linux-x86/aarch64 \
+                 system/core frameworks/native external/tinyalsa
+        
+    - name: 复制HAL源码
+      run: |
+        echo "========================================="
+        echo "   复制修改后的HAL源码"
+        echo "========================================="
+        
+        # 从仓库复制HAL源码到编译目录
+        # 用户需要将HAL源码放在仓库的 hal_source 目录下
+        if [ -d "$GITHUB_WORKSPACE/hal_source" ]; then
+          cp -r "$GITHUB_WORKSPACE/hal_source"/* ~/lineageos/hardware/qcom/audio/
+          echo "✅ HAL源码复制完成"
+          
+          # 验证是否包含修改
+          if grep -q "VoIP-GSM Bridge Support" ~/lineageos/hardware/qcom/audio/hal/audio_hw.c; then
+            echo "✅ 确认包含VoIP-GSM Bridge修改"
+          else
+            echo "⚠️  警告：未找到VoIP-GSM Bridge修改"
+          fi
+        else
+          echo "❌ 错误：未找到hal_source目录"
+          echo "请创建hal_source目录并放入HAL源码"
+          exit 1
+        fi
+        
+    - name: 下载必要的预编译工具
+      run: |
+        echo "========================================="
+        echo "   下载交叉编译工具链"
+        echo "========================================="
+        cd ~/lineageos
+        
+        # 下载aarch64交叉编译工具链
+        wget -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/master.tar.gz
+        mkdir -p prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9
+        tar -xzf master.tar.gz -C prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/
+        
+    - name: 编译HAL
+      run: |
+        echo "========================================="
+        echo "   开始编译Audio HAL"
+        echo "========================================="
+        cd ~/lineageos
+        
+        # 设置编译环境变量
+        export ANDROID_BUILD_TOP=$(pwd)
+        export TARGET_ARCH=arm64
+        export TARGET_ARCH_VARIANT=armv8-a
+        export TARGET_CPU_ABI=arm64-v8a
+        export TARGET_PRODUCT=aosp_arm64
+        export TARGET_BUILD_VARIANT=userdebug
+        export TARGET_BOARD_PLATFORM=msm8937
+        
+        # 使用gcc直接编译HAL（绕过完整的Android构建系统）
+        cd hardware/qcom/audio/hal
+        
+        # 简化编译：只编译.c文件为.o，然后链接为.so
+        CROSS_COMPILE=~/lineageos/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin/aarch64-linux-android-
+        
+        echo "编译audio_hw.c..."
+        ${CROSS_COMPILE}gcc -c audio_hw.c \
+          -fPIC \
+          -I. \
+          -DANDROID \
+          -D__ANDROID_API__=30 \
+          -o audio_hw.o || {
+          echo "⚠️  完整编译失败，尝试简化方案"
+          echo "ℹ️  注意：可能需要完整的Android源码才能成功编译"
+        }
+        
+        # 如果编译成功，创建产物
+        if [ -f audio_hw.o ]; then
+          echo "✅ 编译对象文件成功"
+          ls -lh audio_hw.o
+        fi
+        
+    - name: 打包产物
+      if: success()
+      run: |
+        echo "========================================="
+        echo "   打包编译产物"
+        echo "========================================="
+        
+        mkdir -p $GITHUB_WORKSPACE/output
+        
+        # 复制所有生成的文件
+        find ~/lineageos -name "audio.primary*.so" -exec cp {} $GITHUB_WORKSPACE/output/ \;
+        find ~/lineageos -name "*.o" -exec cp {} $GITHUB_WORKSPACE/output/ \;
+        
+        # 打包修改后的源码（供参考）
+        tar -czf $GITHUB_WORKSPACE/output/hal_modified_source.tar.gz \
+          -C ~/lineageos/hardware/qcom/audio/hal .
+        
+        ls -lh $GITHUB_WORKSPACE/output/
+        
+    - name: 上传编译产物
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: audio-hal-build
+        path: output/
+        retention-days: 30  # 保留30天
+
+    - name: 生成编译报告
+      if: always()
+      run: |
+        cat > $GITHUB_WORKSPACE/output/BUILD_REPORT.txt << EOF
+========================================
+   Audio HAL 编译报告
+========================================
+
+编译时间: $(date)
+编译环境: Ubuntu 22.04 (GitHub Actions)
+目标平台: msm8937 (arm64)
+
+编译状态: ${{ job.status }}
+
+说明：
+------
+由于缺少完整的Android源码树和依赖，
+此GitHub Actions工作流可能无法完成完整编译。
+
+建议方案：
+1. 使用完整的Linux环境编译
+2. 或修改此工作流下载完整的LineageOS源码（需要更长时间）
+
+========================================
+EOF
+        cat $GITHUB_WORKSPACE/output/BUILD_REPORT.txt

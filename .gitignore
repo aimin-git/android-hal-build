@@ -1,0 +1,18 @@
+# 构建产物
+output/
+*.log
+*.apk
+app/build/
+.gradle/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# macOS
+.DS_Store
+
+# 临时文件
+*.bak
+*.tmp
