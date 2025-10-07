@@ -88,8 +88,9 @@ jobs:
           VARIANT="${{ github.event.inputs.build_variant }}"; [ -z "$VARIANT" ] && VARIANT="userdebug"
           MODULE="${{ github.event.inputs.target_module }}"; [ -z "$MODULE" ] && MODULE="hardware/qcom/audio/hal"
 
-          echo "lunch lineage_${DEV}-${VARIANT}"
-          lunch lineage_${DEV}-${VARIANT} || lunch aosp_arm64-${VARIANT}
+          echo "Attempting lunch with fallback to generic target..."
+          # 直接使用 aosp_arm64，不依赖设备特定配置
+          lunch aosp_arm64-${VARIANT} || { echo "⚠️ lunch failed, setting minimal env manually"; export TARGET_PRODUCT=aosp_arm64; export TARGET_BUILD_VARIANT=${VARIANT}; }
 
           echo "Building module: $MODULE"
           mmm "$MODULE" -j"$(nproc --all)"
