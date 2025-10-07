@@ -1,0 +1,138 @@
+name: Build HAL with Full LineageOS Tree
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout HAL source
+        uses: actions/checkout@v4
+        with:
+          path: hal_source
+      
+      - name: Free up disk space
+        run: |
+          echo "🗑️ 清理磁盘空间..."
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf "/usr/local/share/boost"
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo apt-get clean
+          df -h
+      
+      - name: Install dependencies
+        run: |
+          echo "📦 安装依赖..."
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ccache curl flex \
+            g++-multilib gcc-multilib git gnupg gperf imagemagick \
+            lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev \
+            liblz4-tool libncurses-dev libsdl1.2-dev libssl-dev libxml2 \
+            libxml2-utils lzop pngcrush rsync schedtool squashfs-tools \
+            xsltproc zip zlib1g-dev python-is-python3 openjdk-11-jdk repo
+      
+      - name: Sync minimal LineageOS sources for HAL compilation
+        run: |
+          echo "🔄 初始化 repo..."
+          mkdir -p ~/lineageos
+          cd ~/lineageos
+          
+          # 配置 git
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+          git config --global color.ui false
+          
+          # 初始化 repo（使用 local manifest 只同步需要的仓库）
+          repo init -u https://github.com/LineageOS/android.git -b lineage-17.1 --depth=1
+          
+          # 创建 local manifest，只包含编译 HAL 需要的仓库
+          mkdir -p .repo/local_manifests
+          cat > .repo/local_manifests/hal_only.xml << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <manifest>
+            <!-- 移除不需要的项目 -->
+            <remove-project name="LineageOS/android_bootable_recovery" />
+            <remove-project name="LineageOS/android_packages_apps_*" />
+            <remove-project name="LineageOS/android_device_*" />
+            <remove-project name="platform/frameworks/base" />
+            <remove-project name="platform/frameworks/native" />
+            
+            <!-- 只保留编译 HAL 必需的 -->
+            <!-- build 系统 -->
+            <!-- hardware/qcom/audio -->
+            <!-- system/core, system/media -->
+            <!-- external/tinyalsa, external/expat -->
+            <!-- prebuilts -->
+          </manifest>
+          EOF
+          
+          echo "⬇️ 同步最小源码集（~5-10GB）..."
+          # 只同步这些关键路径
+          repo sync -c -j$(nproc) --force-sync --no-clone-bundle --no-tags \
+            platform/build \
+            platform/build/soong \
+            LineageOS/android_hardware_qcom_audio \
+            platform/system/core \
+            platform/system/media \
+            platform/external/tinyalsa \
+            platform/external/expat \
+            platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 \
+            platform/prebuilts/clang/host/linux-x86 \
+            LineageOS/android_prebuilts_build-tools \
+            LineageOS/android_vendor_lineage || {
+              echo "⚠️ 部分仓库同步失败，继续尝试..."
+            }
+          
+          echo "✅ 源码同步完成"
+          du -sh .
+      
+      - name: Replace HAL source with modified version
+        run: |
+          echo "📝 替换 HAL 源码..."
+          cd ~/lineageos
+          rm -rf hardware/qcom/audio/hal/*
+          cp -r $GITHUB_WORKSPACE/hal_source/* hardware/qcom/audio/hal/
+          echo "✅ HAL 源码已替换"
+      
+      - name: Build HAL
+        run: |
+          cd ~/lineageos
+          source build/envsetup.sh
+          
+          # 使用 ccache 加速
+          export USE_CCACHE=1
+          export CCACHE_DIR=~/.ccache
+          
+          # Lunch for generic ARM64
+          lunch aosp_arm64-userdebug
+          
+          echo "🔨 开始编译 HAL..."
+          make -j$(nproc) audio.primary.msm8953
+      
+      - name: Upload HAL artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audio-hal-msm8953
+          path: |
+            ~/lineageos/out/target/product/*/vendor/lib64/hw/audio.primary.*.so
+            ~/lineageos/out/target/product/*/vendor/lib/hw/audio.primary.*.so
+          retention-days: 7
+      
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            ~/lineageos/out/error.log
+            ~/lineageos/out/verbose.log.gz
+          retention-days: 3
+
