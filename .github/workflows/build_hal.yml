@@ -49,6 +49,11 @@ jobs:
 
           echo "Patching envsetup.sh to find vendor scripts..."
           sed -i 's/maxdepth 2/maxdepth 3/g' build/envsetup.sh || true
+          
+          # 关键修复：阻止 envsetup.sh 重新设置 ANDROID_BUILD_TOP=$(gettop)
+          # 因为 gettop 会返回空导致路径变成 /vendor/lineage/...
+          echo "Patching envsetup.sh line 1621 to preserve ANDROID_BUILD_TOP..."
+          sed -i '1621s/^export ANDROID_BUILD_TOP=.*/# &\nexport ANDROID_BUILD_TOP="${ANDROID_BUILD_TOP:-$(gettop)}"/' build/envsetup.sh
 
           echo "Copying HAL source..."
           mkdir -p hardware/qcom/audio
@@ -61,18 +66,6 @@ jobs:
           export TOP="$ANDROID_BUILD_TOP"
           export ALLOW_MISSING_DEPENDENCIES=true
           export SOONG_ALLOW_MISSING_DEPENDENCIES=true
-          
-          # 调试：打印关键路径和变量
-          echo "🔍 DEBUG: ANDROID_BUILD_TOP=$ANDROID_BUILD_TOP"
-          echo "🔍 DEBUG: Current dir=$(pwd)"
-          echo "🔍 DEBUG: Checking vendor/lineage structure..."
-          ls -la vendor/lineage/ || echo "❌ vendor/lineage not found"
-          ls -la vendor/lineage/build/ || echo "❌ vendor/lineage/build not found"
-          ls -la vendor/lineage/build/envsetup.sh || echo "❌ vendor/lineage/build/envsetup.sh not found"
-          
-          # 打印 envsetup.sh 第1623行附近的内容
-          echo "🔍 DEBUG: envsetup.sh line 1620-1625:"
-          sed -n '1620,1625p' build/envsetup.sh
           
           source build/envsetup.sh
 
