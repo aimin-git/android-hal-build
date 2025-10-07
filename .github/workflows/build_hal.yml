@@ -55,6 +55,11 @@ jobs:
           git clone --depth=1 https://android.googlesource.com/platform/prebuilts/go/linux-x86 prebuilts/go/linux-x86 || \
           { echo "⚠️ Go prebuilts clone failed, using system Go"; mkdir -p prebuilts/go/linux-x86/bin && ln -s /usr/bin/go prebuilts/go/linux-x86/bin/go; }
           
+          # External dependencies for Soong
+          echo "Cloning external dependencies..."
+          mkdir -p external
+          git clone --depth=1 https://android.googlesource.com/platform/external/golang-protobuf external/golang-protobuf || echo "⚠️ golang-protobuf clone failed"
+          
           # 创建 gettop 所需的标记文件（必须在 source envsetup.sh 之前）
           echo "Creating markers for gettop..."
           mkdir -p .repo
