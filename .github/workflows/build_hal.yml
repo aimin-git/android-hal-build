@@ -136,7 +136,13 @@ jobs:
           echo "Building module: $MODULE"
           # 直接调用 soong_ui.bash，绕过有问题的 mmm 函数
           cd "$TOP"
-          "$TOP/build/soong/soong_ui.bash" --make-mode "$MODULE"
+          # 使用 MODULES-IN-xxx 格式指定模块目录
+          MODULE_NAME="MODULES-IN-${MODULE//\//-}"
+          echo "Attempting to build target: $MODULE_NAME"
+          "$TOP/build/soong/soong_ui.bash" --make-mode "$MODULE_NAME" || \
+          "$TOP/build/soong/soong_ui.bash" --make-mode audio.primary.default || \
+          "$TOP/build/soong/soong_ui.bash" --make-mode audio.primary.msm8953 || \
+          { echo "⚠️ All build attempts failed, trying direct path"; "$TOP/build/soong/soong_ui.bash" --make-mode "$MODULE"; }
 
       - name: Find and upload artifacts
         if: success() || failure()
