@@ -49,8 +49,8 @@ jobs:
           git config --global user.name "GitHub Actions"
           git config --global color.ui false
           
-          # 初始化 repo
-          repo init -u https://github.com/LineageOS/android.git -b lineage-17.1 --depth=1
+          # 初始化 repo - 使用 LineageOS 22.2 (Android 15)
+          repo init -u https://github.com/LineageOS/android.git -b lineage-22.2 --depth=1
           
           echo "⬇️ 同步最小源码集（~5-10GB）..."
           # 使用 repo sync 同步所有默认仓库（会自动处理依赖）
