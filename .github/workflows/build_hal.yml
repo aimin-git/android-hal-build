@@ -90,7 +90,18 @@ jobs:
 
           echo "Attempting lunch with fallback to generic target..."
           # 直接使用 aosp_arm64，不依赖设备特定配置
-          lunch aosp_arm64-${VARIANT} || { echo "⚠️ lunch failed, setting minimal env manually"; export TARGET_PRODUCT=aosp_arm64; export TARGET_BUILD_VARIANT=${VARIANT}; }
+          lunch aosp_arm64-${VARIANT} || { 
+            echo "⚠️ lunch failed, setting minimal env manually"
+            export TARGET_PRODUCT=aosp_arm64
+            export TARGET_BUILD_VARIANT=${VARIANT}
+          }
+          
+          # 强制确保 TOP 变量在 mmm 之前正确设置
+          echo "Force-setting TOP for mmm..."
+          export TOP="$ANDROID_BUILD_TOP"
+          echo "TOP=$TOP"
+          echo "Checking critical paths:"
+          ls -la "$TOP/build/soong/soong_ui.bash" || echo "❌ soong_ui.bash not found"
 
           echo "Building module: $MODULE"
           mmm "$MODULE" -j"$(nproc --all)"
