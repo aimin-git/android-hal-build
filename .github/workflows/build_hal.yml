@@ -59,6 +59,11 @@ jobs:
           mkdir -p hardware/qcom/audio
           cp -r ../hal_source hardware/qcom/audio/hal
 
+          # 创建 gettop 所需的标记文件，让它能正确识别源码根目录
+          echo "Creating markers for gettop..."
+          touch build/core/envsetup.mk
+          mkdir -p .repo
+
           echo "Sourcing environment and building..."
           # 强制指定源码根，避免 /vendor/... 这种绝对路径
           export ANDROID_BUILD_TOP="$(pwd)"
