@@ -60,6 +60,8 @@ jobs:
             prebuilts/build-tools \
             external/tinyalsa \
             external/expat \
+            external/golang-protobuf \
+            external/protobuf \
             hardware/libhardware \
             hardware/libhardware_legacy \
             system/core \
@@ -78,11 +80,22 @@ jobs:
           export TOP=$(pwd)
           source build/envsetup.sh
           
-          # 尝试 lunch 通用目标
-          lunch aosp_arm64-userdebug || { 
-            echo "⚠️ lunch failed, attempting to set minimal env manually"
+          # Android 15+ 需要三段式 lunch 格式：<product>-<release>-<variant>
+          # 查找可用的 release 版本
+          echo "Available products and releases:"
+          ls -d device/*/* 2>/dev/null | head -5 || echo "No device configs found"
+          
+          # 尝试多种 lunch 格式
+          lunch aosp_arm64-trunk_staging-userdebug 2>/dev/null || \
+          lunch aosp_arm64-ap2a-userdebug 2>/dev/null || \
+          lunch aosp_arm64-eng 2>/dev/null || { 
+            echo "⚠️ All lunch attempts failed, setting minimal env manually"
             export TARGET_PRODUCT=aosp_arm64
             export TARGET_BUILD_VARIANT=userdebug
+            export TARGET_ARCH=arm64
+            export TARGET_ARCH_VARIANT=armv8-a
+            export TARGET_CPU_VARIANT=generic
+            export TARGET_BOARD_PLATFORM=msm8953
           }
           
           # 编译 HAL 模块
