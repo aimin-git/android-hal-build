@@ -1,14 +1,22 @@
 name: Build Audio HAL
 
 on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       device_codename:
-        description: 'Device Codename'
+        description: 'Device Codename (e.g., Mi439)'
         required: true
         default: 'Mi439'
+      build_variant:
+        description: 'Build Variant (e.g., userdebug)'
+        required: true
+        default: 'userdebug'
       target_module:
-        description: 'Target Module'
+        description: 'Target Module to build'
         required: true
         default: 'hardware/qcom/audio/hal'
 
@@ -19,45 +27,58 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies and repo
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 openjdk-11-jdk
-          mkdir -p ~/bin
-          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-          chmod a+x ~/bin/repo
-          export PATH=~/bin:$PATH
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python-is-python3 openjdk-11-jdk
 
-      - name: Initialize LineageOS 17.1 environment
+      - name: Prepare and Build HAL
+        shell: bash
         run: |
+          set -euo pipefail
+
           mkdir -p lineageos-source
           cd lineageos-source
-          export PATH=~/bin:$PATH
-          repo init -u https://github.com/LineageOS/android.git -b lineage-17.1 --depth=1
-          # Sync only build tools, vendor, and our specific project
-          repo sync -c -j$(nproc --all) --no-clone-bundle --no-tags build/make
-          repo sync -c -j$(nproc --all) --no-clone-bundle --no-tags vendor/lineage
-          repo sync -c -j$(nproc --all) --no-clone-bundle --no-tags hardware/qcom/audio
 
-      - name: Overwrite with modified HAL source
-        run: |
-          echo "Overwriting HAL source with modifications..."
-          cp -r hal_source/* lineageos-source/hardware/qcom/audio/hal/
+          echo "Cloning build system and vendor..."
+          git clone --depth=1 -b lineage-17.1 https://github.com/LineageOS/android_build.git build
+          # Soong is required by envsetup/gettop and mmm
+          git clone --depth=1 -b lineage-17.1 https://github.com/LineageOS/android_build_soong.git build/soong
+          mkdir -p vendor
+          git clone --depth=1 -b lineage-17.1 https://github.com/LineageOS/android_vendor_lineage.git vendor/lineage
 
-      - name: Build HAL
-        working-directory: ./lineageos-source
-        run: |
+          echo "Patching envsetup.sh to find vendor scripts..."
+          sed -i 's/maxdepth 2/maxdepth 3/g' build/envsetup.sh || true
+
+          echo "Copying HAL source..."
+          mkdir -p hardware/qcom/audio
+          cp -r ../hal_source hardware/qcom/audio/hal
+
+          echo "Sourcing environment and building..."
+          export TOP="$(pwd)"
           source build/envsetup.sh
-          lunch lineage_${{ github.event.inputs.device_codename }}-userdebug
-          mmm ${{ github.event.inputs.target_module }} -j$(nproc --all)
 
-      - name: Upload Artifacts
+          # Resolve inputs with safe defaults when push/pr triggers are used
+          DEV="${{ github.event.inputs.device_codename }}"; [ -z "$DEV" ] && DEV="Mi439"
+          VARIANT="${{ github.event.inputs.build_variant }}"; [ -z "$VARIANT" ] && VARIANT="userdebug"
+          MODULE="${{ github.event.inputs.target_module }}"; [ -z "$MODULE" ] && MODULE="hardware/qcom/audio/hal"
+
+          echo "lunch lineage_${DEV}-${VARIANT}"
+          lunch lineage_${DEV}-${VARIANT} || lunch aosp_arm64-${VARIANT}
+
+          echo "Building module: $MODULE"
+          mmm "$MODULE" -j"$(nproc --all)"
+
+      - name: Find and upload artifacts
         if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
           name: audio-hal-build-and-logs
           path: |
-            lineageos-source/out/target/product/${{ github.event.inputs.device_codename }}/vendor/lib/hw/audio.primary.*.so
-            lineageos-source/out/target/product/${{ github.event.inputs.device_codename }}/vendor/lib64/hw/audio.primary.*.so
+            lineageos-source/out/target/product/*/system/lib/hw/audio.primary.*.so
+            lineageos-source/out/target/product/*/system/lib64/hw/audio.primary.*.so
+            lineageos-source/out/target/product/*/vendor/lib/hw/audio.primary.*.so
+            lineageos-source/out/target/product/*/vendor/lib64/hw/audio.primary.*.so
             lineageos-source/out/soong/logs/*
+            lineageos-source/out/verbose.log.gz
           retention-days: 7
