@@ -55,6 +55,18 @@ jobs:
           git clone --depth=1 https://android.googlesource.com/platform/prebuilts/go/linux-x86 prebuilts/go/linux-x86 || \
           { echo "⚠️ Go prebuilts clone failed, using system Go"; mkdir -p prebuilts/go/linux-x86/bin && ln -s /usr/bin/go prebuilts/go/linux-x86/bin/go; }
           
+          # Build tools: ckati, ninja, etc.
+          echo "Cloning build-tools prebuilts..."
+          mkdir -p prebuilts/build-tools
+          git clone --depth=1 -b lineage-17.1 https://github.com/LineageOS/android_prebuilts_build-tools.git prebuilts/build-tools/temp || \
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/build-tools prebuilts/build-tools/temp || \
+          echo "⚠️ build-tools clone failed"
+          # Move linux-x86 to correct location
+          if [ -d "prebuilts/build-tools/temp/linux-x86" ]; then
+            mv prebuilts/build-tools/temp/linux-x86 prebuilts/build-tools/
+            rm -rf prebuilts/build-tools/temp
+          fi
+          
           # External dependencies for Soong
           echo "Cloning external dependencies..."
           mkdir -p external
