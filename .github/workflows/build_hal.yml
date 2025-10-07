@@ -35,7 +35,7 @@ jobs:
       - name: Prepare and Build HAL
         shell: bash
         run: |
-          set -euo pipefail
+          set -eo pipefail
 
           mkdir -p lineageos-source
           cd lineageos-source
@@ -56,6 +56,8 @@ jobs:
 
           echo "Sourcing environment and building..."
           export TOP="$(pwd)"
+          export ALLOW_MISSING_DEPENDENCIES=true
+          export SOONG_ALLOW_MISSING_DEPENDENCIES=true
           source build/envsetup.sh
 
           # Resolve inputs with safe defaults when push/pr triggers are used
