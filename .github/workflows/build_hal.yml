@@ -30,130 +30,65 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python-is-python3 openjdk-11-jdk
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python-is-python3 openjdk-11-jdk repo
 
-      - name: Prepare and Build HAL
+      - name: Sync LineageOS 22.2 sources and build HAL
         shell: bash
         run: |
           set -eo pipefail
-
-          mkdir -p lineageos-source
-          cd lineageos-source
-
-          echo "Cloning build system and vendor..."
-          git clone --depth=1 -b lineage-17.1 https://github.com/LineageOS/android_build.git build
-          # Soong is required by envsetup/gettop and mmm
-          git clone --depth=1 -b lineage-17.1 https://github.com/LineageOS/android_build_soong.git build/soong
-          # Blueprint is required by Soong (microfactory)
-          git clone --depth=1 -b lineage-17.1 https://github.com/LineageOS/android_build_blueprint.git build/blueprint
           
-          # Prebuilts: Go toolchain for building Soong
-          echo "Cloning Go prebuilts..."
-          mkdir -p prebuilts/go
-          # 尝试多个可能的仓库名
-          git clone --depth=1 -b lineage-17.1 https://android.googlesource.com/platform/prebuilts/go/linux-x86 prebuilts/go/linux-x86 || \
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/go/linux-x86 prebuilts/go/linux-x86 || \
-          { echo "⚠️ Go prebuilts clone failed, using system Go"; mkdir -p prebuilts/go/linux-x86/bin && ln -s /usr/bin/go prebuilts/go/linux-x86/bin/go; }
+          echo "🔄 初始化 repo..."
+          mkdir -p ~/lineageos
+          cd ~/lineageos
           
-          # Build tools: ckati, ninja, etc.
-          echo "Cloning build-tools prebuilts..."
-          mkdir -p prebuilts/build-tools
-          git clone --depth=1 -b lineage-17.1 https://github.com/LineageOS/android_prebuilts_build-tools.git prebuilts/build-tools/temp || \
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/build-tools prebuilts/build-tools/temp || \
-          echo "⚠️ build-tools clone failed"
-          # Move linux-x86 to correct location
-          if [ -d "prebuilts/build-tools/temp/linux-x86" ]; then
-            mv prebuilts/build-tools/temp/linux-x86 prebuilts/build-tools/
-            rm -rf prebuilts/build-tools/temp
-          fi
+          # 配置 git
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+          git config --global color.ui false
           
-          # External dependencies for Soong
-          echo "Cloning external dependencies..."
-          mkdir -p external
-          # 克隆旧版本的 golang-protobuf，它不依赖 google.golang.org/protobuf
-          git clone --depth=1 -b android10-release https://android.googlesource.com/platform/external/golang-protobuf external/golang-protobuf || \
-          git clone --depth=1 https://android.googlesource.com/platform/external/golang-protobuf external/golang-protobuf || \
-          echo "⚠️ golang-protobuf clone failed"
+          # 初始化 repo - 使用 LineageOS 22.2 (Android 15)
+          repo init -u https://github.com/LineageOS/android.git -b lineage-22.2 --depth=1
           
-          # 创建 gettop 所需的标记文件（必须在 source envsetup.sh 之前）
-          echo "Creating markers for gettop..."
-          mkdir -p .repo
-          mkdir -p build/core
-          touch build/core/envsetup.mk
+          echo "⬇️ 同步最小源码集（~5-10GB）..."
+          # 只同步必需的仓库来节省时间和空间
+          repo sync -c -j$(nproc) --force-sync --no-clone-bundle --no-tags \
+            build/make \
+            build/soong \
+            build/blueprint \
+            vendor/lineage \
+            prebuilts/go/linux-x86 \
+            prebuilts/build-tools \
+            external/tinyalsa \
+            external/expat \
+            hardware/libhardware \
+            hardware/libhardware_legacy \
+            system/core \
+            system/media \
+            frameworks/av || true
           
-          mkdir -p vendor
-          git clone --depth=1 -b lineage-17.1 https://github.com/LineageOS/android_vendor_lineage.git vendor/lineage
-
-          echo "Patching envsetup.sh to find vendor scripts..."
-          sed -i 's/maxdepth 2/maxdepth 3/g' build/envsetup.sh || true
+          echo "✅ 源码同步完成"
+          du -sh . || true
           
-          # 关键修复：阻止 envsetup.sh 重新设置 ANDROID_BUILD_TOP=$(gettop)
-          # 因为 gettop 会返回空导致路径变成 /vendor/lineage/...
-          echo "Patching envsetup.sh line 1621 to preserve ANDROID_BUILD_TOP..."
-          sed -i '1621s/^export ANDROID_BUILD_TOP=.*/# &\nexport ANDROID_BUILD_TOP="${ANDROID_BUILD_TOP:-$(gettop)}"/' build/envsetup.sh
-
-          echo "Copying HAL source..."
+          echo "📝 替换 HAL 源码..."
           mkdir -p hardware/qcom/audio
-          cp -r ../hal_source hardware/qcom/audio/hal
-
-          echo "Sourcing environment and building..."
-          # 强制指定源码根，避免 /vendor/... 这种绝对路径
-          export ANDROID_BUILD_TOP="$(pwd)"
-          export BUILD_TOP="$ANDROID_BUILD_TOP"
-          export TOP="$ANDROID_BUILD_TOP"
-          export ALLOW_MISSING_DEPENDENCIES=true
-          export SOONG_ALLOW_MISSING_DEPENDENCIES=true
+          cp -r $GITHUB_WORKSPACE/hal_source hardware/qcom/audio/hal
+          echo "✅ HAL 源码替换完成"
           
-          # 在 source 之前先定义 gettop 函数，让它直接返回当前目录
-          echo "Overriding gettop function..."
-          function gettop() {
-            echo "$ANDROID_BUILD_TOP"
-          }
-          export -f gettop
-          
+          echo "🔨 设置编译环境并编译 HAL..."
+          export TOP=$(pwd)
           source build/envsetup.sh
-
-          # Resolve inputs with safe defaults when push/pr triggers are used
-          DEV="${{ github.event.inputs.device_codename }}"; [ -z "$DEV" ] && DEV="Mi439"
-          VARIANT="${{ github.event.inputs.build_variant }}"; [ -z "$VARIANT" ] && VARIANT="userdebug"
-          MODULE="${{ github.event.inputs.target_module }}"; [ -z "$MODULE" ] && MODULE="hardware/qcom/audio/hal"
-
-          echo "Attempting lunch with fallback to generic target..."
-          # 直接使用 aosp_arm64，不依赖设备特定配置
-          lunch aosp_arm64-${VARIANT} || { 
-            echo "⚠️ lunch failed, setting minimal env manually"
+          
+          # 尝试 lunch 通用目标
+          lunch aosp_arm64-userdebug || { 
+            echo "⚠️ lunch failed, attempting to set minimal env manually"
             export TARGET_PRODUCT=aosp_arm64
-            export TARGET_BUILD_VARIANT=${VARIANT}
+            export TARGET_BUILD_VARIANT=userdebug
           }
           
-          # 强制确保 TOP 变量在 mmm 之前正确设置
-          echo "Force-setting TOP for build..."
-          export TOP="$ANDROID_BUILD_TOP"
-          echo "TOP=$TOP"
-          echo "Checking critical paths:"
-          ls -la "$TOP/build/soong/soong_ui.bash" || echo "❌ soong_ui.bash not found"
-
-          echo "Building module: $MODULE"
-          # 直接调用 soong_ui.bash，绕过有问题的 mmm 函数
-          cd "$TOP"
-          
-          # 确保 PATH 包含基本命令
-          export PATH="/usr/bin:/bin:/usr/local/bin:$PATH"
-          echo "PATH=$PATH"
-          which mkdir || echo "❌ mkdir not found in PATH"
-          
-          # 策略：不指定目标，让 Soong 扫描所有模块，然后我们从输出中找到编译好的 .so
-          echo "Starting full Soong build (will compile available modules)..."
-          "$TOP/build/soong/soong_ui.bash" --make-mode --skip-make || \
-          { 
-            echo "⚠️ Soong-only build failed, trying with minimal target"
-            # 设置最小环境变量后尝试编译
-            export TARGET_BOARD_PLATFORM=msm8953
-            export TARGET_ARCH=arm64
-            export TARGET_ARCH_VARIANT=armv8-a
-            export TARGET_CPU_VARIANT=cortex-a53
-            "$TOP/build/soong/soong_ui.bash" --make-mode droid || echo "Minimal build also failed"
-          }
+          # 编译 HAL 模块
+          echo "Building HAL module..."
+          mka audio.primary.msm8953 -j$(nproc) || mka hardware/qcom/audio/hal -j$(nproc) || true
+          echo "✅ 编译尝试完成"
 
       - name: Find and upload artifacts
         if: success() || failure()
@@ -161,10 +96,10 @@ jobs:
         with:
           name: audio-hal-build-and-logs
           path: |
-            lineageos-source/out/target/product/*/system/lib/hw/audio.primary.*.so
-            lineageos-source/out/target/product/*/system/lib64/hw/audio.primary.*.so
-            lineageos-source/out/target/product/*/vendor/lib/hw/audio.primary.*.so
-            lineageos-source/out/target/product/*/vendor/lib64/hw/audio.primary.*.so
-            lineageos-source/out/soong/logs/*
-            lineageos-source/out/verbose.log.gz
+            ~/lineageos/out/target/product/*/system/lib/hw/audio.primary.*.so
+            ~/lineageos/out/target/product/*/system/lib64/hw/audio.primary.*.so
+            ~/lineageos/out/target/product/*/vendor/lib/hw/audio.primary.*.so
+            ~/lineageos/out/target/product/*/vendor/lib64/hw/audio.primary.*.so
+            ~/lineageos/out/soong/logs/*
+            ~/lineageos/out/verbose.log.gz
           retention-days: 7
