@@ -50,7 +50,10 @@ jobs:
           # Prebuilts: Go toolchain for building Soong
           echo "Cloning Go prebuilts..."
           mkdir -p prebuilts/go
-          git clone --depth=1 -b lineage-17.1 https://github.com/LineageOS/android_prebuilts_go_linux-x86.git prebuilts/go/linux-x86
+          # 尝试多个可能的仓库名
+          git clone --depth=1 -b lineage-17.1 https://android.googlesource.com/platform/prebuilts/go/linux-x86 prebuilts/go/linux-x86 || \
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/go/linux-x86 prebuilts/go/linux-x86 || \
+          { echo "⚠️ Go prebuilts clone failed, using system Go"; mkdir -p prebuilts/go/linux-x86/bin && ln -s /usr/bin/go prebuilts/go/linux-x86/bin/go; }
           
           # 创建 gettop 所需的标记文件（必须在 source envsetup.sh 之前）
           echo "Creating markers for gettop..."
