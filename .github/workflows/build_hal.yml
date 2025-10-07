@@ -137,6 +137,11 @@ jobs:
           # 直接调用 soong_ui.bash，绕过有问题的 mmm 函数
           cd "$TOP"
           
+          # 确保 PATH 包含基本命令
+          export PATH="/usr/bin:/bin:/usr/local/bin:$PATH"
+          echo "PATH=$PATH"
+          which mkdir || echo "❌ mkdir not found in PATH"
+          
           # 策略：不指定目标，让 Soong 扫描所有模块，然后我们从输出中找到编译好的 .so
           echo "Starting full Soong build (will compile available modules)..."
           "$TOP/build/soong/soong_ui.bash" --make-mode --skip-make || \
