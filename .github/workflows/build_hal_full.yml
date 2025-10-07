@@ -49,46 +49,13 @@ jobs:
           git config --global user.name "GitHub Actions"
           git config --global color.ui false
           
-          # 初始化 repo（使用 local manifest 只同步需要的仓库）
+          # 初始化 repo
           repo init -u https://github.com/LineageOS/android.git -b lineage-17.1 --depth=1
           
-          # 创建 local manifest，只包含编译 HAL 需要的仓库
-          mkdir -p .repo/local_manifests
-          cat > .repo/local_manifests/hal_only.xml << 'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <manifest>
-            <!-- 移除不需要的项目 -->
-            <remove-project name="LineageOS/android_bootable_recovery" />
-            <remove-project name="LineageOS/android_packages_apps_*" />
-            <remove-project name="LineageOS/android_device_*" />
-            <remove-project name="platform/frameworks/base" />
-            <remove-project name="platform/frameworks/native" />
-            
-            <!-- 只保留编译 HAL 必需的 -->
-            <!-- build 系统 -->
-            <!-- hardware/qcom/audio -->
-            <!-- system/core, system/media -->
-            <!-- external/tinyalsa, external/expat -->
-            <!-- prebuilts -->
-          </manifest>
-          EOF
-          
           echo "⬇️ 同步最小源码集（~5-10GB）..."
-          # 只同步这些关键路径
-          repo sync -c -j$(nproc) --force-sync --no-clone-bundle --no-tags \
-            platform/build \
-            platform/build/soong \
-            LineageOS/android_hardware_qcom_audio \
-            platform/system/core \
-            platform/system/media \
-            platform/external/tinyalsa \
-            platform/external/expat \
-            platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 \
-            platform/prebuilts/clang/host/linux-x86 \
-            LineageOS/android_prebuilts_build-tools \
-            LineageOS/android_vendor_lineage || {
-              echo "⚠️ 部分仓库同步失败，继续尝试..."
-            }
+          # 使用 repo sync 同步所有默认仓库（会自动处理依赖）
+          # 然后我们只保留需要的
+          repo sync -c -j$(nproc) --force-sync --no-clone-bundle --no-tags || true
           
           echo "✅ 源码同步完成"
           du -sh .
