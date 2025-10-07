@@ -134,70 +134,26 @@ jobs:
           ls -la "$TOP/build/soong/soong_ui.bash" || echo "❌ soong_ui.bash not found"
 
           echo "Building module: $MODULE"
+          # 直接调用 soong_ui.bash，绕过有问题的 mmm 函数
           cd "$TOP"
           
-          # 放弃 Soong，直接使用 make + Android.mk
-          echo "Using traditional Make system instead of Soong..."
+          # 确保 PATH 包含基本命令
+          export PATH="/usr/bin:/bin:/usr/local/bin:$PATH"
+          echo "PATH=$PATH"
+          which mkdir || echo "❌ mkdir not found in PATH"
           
-          # 设置必要的编译环境变量
-          export TARGET_BOARD_PLATFORM=msm8953
-          export TARGET_ARCH=arm64
-          export TARGET_ARCH_VARIANT=armv8-a
-          export TARGET_CPU_VARIANT=cortex-a53
-          export TARGET_PRODUCT=aosp_arm64
-          export TARGET_BUILD_VARIANT=userdebug
-          export OUT_DIR="$TOP/out"
-          export PRODUCT_OUT="$OUT_DIR/target/product/generic"
-          
-          mkdir -p "$OUT_DIR"
-          mkdir -p "$PRODUCT_OUT/system/lib64/hw"
-          mkdir -p "$PRODUCT_OUT/vendor/lib64/hw"
-          
-          # 直接使用 NDK 编译（绕过整个 Android 构建系统）
-          echo "Compiling HAL directly with NDK..."
-          
-          # 查找 prebuilt clang
-          CLANG="$TOP/prebuilts/build-tools/linux-x86/bin"
-          if [ -d "$CLANG" ]; then
-            export PATH="$CLANG:$PATH"
-            export CC=clang
-            export CXX=clang++
-            
-            # 使用简化的编译命令
-            cd "$TOP/$MODULE"
-            
-            # 列出源文件
-            echo "Source files in HAL:"
-            ls -la *.c 2>/dev/null || echo "No .c files in root"
-            ls -la audio_extn/*.c 2>/dev/null || echo "No audio_extn .c files"
-            
-            # 创建最小的编译脚本
-            cat > compile_hal.sh << 'COMPILE_EOF'
-#!/bin/bash
-# 最小化 HAL 编译
-gcc -shared -fPIC \
-  -I. \
-  -DPLATFORM_MSM8974 \
-  -DINCALL_MUSIC_ENABLED \
-  -o audio.primary.msm8953.so \
-  audio_hw.c \
-  -lm -ldl || echo "Compilation attempt finished"
-COMPILE_EOF
-            
-            chmod +x compile_hal.sh
-            bash compile_hal.sh
-            
-            # 检查输出
-            if [ -f "audio.primary.msm8953.so" ]; then
-              echo "✅ HAL compiled successfully!"
-              cp audio.primary.msm8953.so "$PRODUCT_OUT/vendor/lib64/hw/"
-              ls -lh "$PRODUCT_OUT/vendor/lib64/hw/audio.primary.msm8953.so"
-            else
-              echo "❌ Compilation failed, but continuing..."
-            fi
-          else
-            echo "⚠️ No clang found, skipping compilation"
-          fi
+          # 策略：不指定目标，让 Soong 扫描所有模块，然后我们从输出中找到编译好的 .so
+          echo "Starting full Soong build (will compile available modules)..."
+          "$TOP/build/soong/soong_ui.bash" --make-mode --skip-make || \
+          { 
+            echo "⚠️ Soong-only build failed, trying with minimal target"
+            # 设置最小环境变量后尝试编译
+            export TARGET_BOARD_PLATFORM=msm8953
+            export TARGET_ARCH=arm64
+            export TARGET_ARCH_VARIANT=armv8-a
+            export TARGET_CPU_VARIANT=cortex-a53
+            "$TOP/build/soong/soong_ui.bash" --make-mode droid || echo "Minimal build also failed"
+          }
 
       - name: Find and upload artifacts
         if: success() || failure()
