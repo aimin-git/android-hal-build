@@ -97,14 +97,16 @@ jobs:
           }
           
           # 强制确保 TOP 变量在 mmm 之前正确设置
-          echo "Force-setting TOP for mmm..."
+          echo "Force-setting TOP for build..."
           export TOP="$ANDROID_BUILD_TOP"
           echo "TOP=$TOP"
           echo "Checking critical paths:"
           ls -la "$TOP/build/soong/soong_ui.bash" || echo "❌ soong_ui.bash not found"
 
           echo "Building module: $MODULE"
-          mmm "$MODULE" -j"$(nproc --all)"
+          # 直接调用 soong_ui.bash，绕过有问题的 mmm 函数
+          cd "$TOP"
+          "$TOP/build/soong/soong_ui.bash" --make-mode "$MODULE"
 
       - name: Find and upload artifacts
         if: success() || failure()
