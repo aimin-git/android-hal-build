@@ -47,6 +47,11 @@ jobs:
           # Blueprint is required by Soong (microfactory)
           git clone --depth=1 -b lineage-17.1 https://github.com/LineageOS/android_build_blueprint.git build/blueprint
           
+          # Prebuilts: Go toolchain for building Soong
+          echo "Cloning Go prebuilts..."
+          mkdir -p prebuilts/go
+          git clone --depth=1 -b lineage-17.1 https://github.com/LineageOS/android_prebuilts_go_linux-x86.git prebuilts/go/linux-x86
+          
           # 创建 gettop 所需的标记文件（必须在 source envsetup.sh 之前）
           echo "Creating markers for gettop..."
           mkdir -p .repo
