@@ -44,6 +44,13 @@ jobs:
           git clone --depth=1 -b lineage-17.1 https://github.com/LineageOS/android_build.git build
           # Soong is required by envsetup/gettop and mmm
           git clone --depth=1 -b lineage-17.1 https://github.com/LineageOS/android_build_soong.git build/soong
+          
+          # 创建 gettop 所需的标记文件（必须在 source envsetup.sh 之前）
+          echo "Creating markers for gettop..."
+          mkdir -p .repo
+          mkdir -p build/core
+          touch build/core/envsetup.mk
+          
           mkdir -p vendor
           git clone --depth=1 -b lineage-17.1 https://github.com/LineageOS/android_vendor_lineage.git vendor/lineage
 
@@ -58,11 +65,6 @@ jobs:
           echo "Copying HAL source..."
           mkdir -p hardware/qcom/audio
           cp -r ../hal_source hardware/qcom/audio/hal
-
-          # 创建 gettop 所需的标记文件，让它能正确识别源码根目录
-          echo "Creating markers for gettop..."
-          touch build/core/envsetup.mk
-          mkdir -p .repo
 
           echo "Sourcing environment and building..."
           # 强制指定源码根，避免 /vendor/... 这种绝对路径
