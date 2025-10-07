@@ -74,6 +74,13 @@ jobs:
           export ALLOW_MISSING_DEPENDENCIES=true
           export SOONG_ALLOW_MISSING_DEPENDENCIES=true
           
+          # 在 source 之前先定义 gettop 函数，让它直接返回当前目录
+          echo "Overriding gettop function..."
+          function gettop() {
+            echo "$ANDROID_BUILD_TOP"
+          }
+          export -f gettop
+          
           source build/envsetup.sh
 
           # Resolve inputs with safe defaults when push/pr triggers are used
