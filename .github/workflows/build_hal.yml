@@ -52,17 +52,14 @@ jobs:
           mkdir -p lineageos-source/hardware/qcom/audio
           cp -r hal_source lineageos-source/hardware/qcom/audio/hal
 
-      - name: Set up build environment
+      - name: Set up Environment and Build HAL
         run: |
           cd lineageos-source
           source build/envsetup.sh
           export TARGET_PRODUCT=lineage_${{ github.event.inputs.device_codename }}
           export TARGET_BUILD_VARIANT=${{ github.event.inputs.build_variant }}
           export OUT_DIR_COMMON_BASE=out
-
-      - name: Build HAL module
-        run: |
-          cd lineageos-source
+          echo "Starting build..."
           mmm ${{ github.event.inputs.target_module }} -j$(nproc --all)
 
       - name: Find and upload artifacts
