@@ -55,9 +55,16 @@ jobs:
           cp -r ../hal_source hardware/qcom/audio/hal
 
           echo "Sourcing environment and building..."
-          export TOP="$(pwd)"
+          # 强制指定源码根，避免 /vendor/... 这种绝对路径
+          export ANDROID_BUILD_TOP="$(pwd)"
+          export BUILD_TOP="$ANDROID_BUILD_TOP"
+          export TOP="$ANDROID_BUILD_TOP"
           export ALLOW_MISSING_DEPENDENCIES=true
           export SOONG_ALLOW_MISSING_DEPENDENCIES=true
+          
+          # 可选：校验 vendor 脚本是否存在
+          test -f vendor/lineage/build/envsetup.sh || { echo "⚠️ missing vendor envsetup"; ls -R vendor/lineage | head -200; }
+          
           source build/envsetup.sh
 
           # Resolve inputs with safe defaults when push/pr triggers are used
