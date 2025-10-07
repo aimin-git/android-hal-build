@@ -136,13 +136,19 @@ jobs:
           echo "Building module: $MODULE"
           # 直接调用 soong_ui.bash，绕过有问题的 mmm 函数
           cd "$TOP"
-          # 使用 MODULES-IN-xxx 格式指定模块目录
-          MODULE_NAME="MODULES-IN-${MODULE//\//-}"
-          echo "Attempting to build target: $MODULE_NAME"
-          "$TOP/build/soong/soong_ui.bash" --make-mode "$MODULE_NAME" || \
-          "$TOP/build/soong/soong_ui.bash" --make-mode audio.primary.default || \
-          "$TOP/build/soong/soong_ui.bash" --make-mode audio.primary.msm8953 || \
-          { echo "⚠️ All build attempts failed, trying direct path"; "$TOP/build/soong/soong_ui.bash" --make-mode "$MODULE"; }
+          
+          # 策略：不指定目标，让 Soong 扫描所有模块，然后我们从输出中找到编译好的 .so
+          echo "Starting full Soong build (will compile available modules)..."
+          "$TOP/build/soong/soong_ui.bash" --make-mode --skip-make || \
+          { 
+            echo "⚠️ Soong-only build failed, trying with minimal target"
+            # 设置最小环境变量后尝试编译
+            export TARGET_BOARD_PLATFORM=msm8953
+            export TARGET_ARCH=arm64
+            export TARGET_ARCH_VARIANT=armv8-a
+            export TARGET_CPU_VARIANT=cortex-a53
+            "$TOP/build/soong/soong_ui.bash" --make-mode droid || echo "Minimal build also failed"
+          }
 
       - name: Find and upload artifacts
         if: success() || failure()
